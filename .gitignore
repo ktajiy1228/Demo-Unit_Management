@@ -35,3 +35,6 @@ yarn-error.log*
 # vitest
 /coverage
 node_modules
+setup-db.sh
+.vercel
+.env*
