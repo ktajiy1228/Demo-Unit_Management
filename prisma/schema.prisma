@@ -1,0 +1,150 @@
+// 照明器具デモ機 運用管理アプリ — Prisma スキーマ
+// プロトタイプは SQLite。Postgres へ移行する場合は datasource の provider と
+// url を差し替える（enum 未使用なので String のまま移行可能）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 拠点
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  address   String?
+  createdAt DateTime @default(now())
+
+  users            User[]
+  homeUnits        DemoUnit[]    @relation("HomeLocation")
+  pickupResv       Reservation[] @relation("PickupLocation")
+  returnResv       Reservation[] @relation("ReturnLocation")
+}
+
+// 利用者。role: ADMIN | MANAGER | STAFF
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("STAFF")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  requestedReservations Reservation[]        @relation("RequestedBy")
+  pickedUpReservations  Reservation[]        @relation("PickedUpBy")
+  returnedReservations  Reservation[]        @relation("ReturnedBy")
+  maintenanceRecords    MaintenanceRecord[]
+}
+
+// カテゴリ（ダウンライト / スポットライト / ベースライト / 屋外用 / 演出照明 など）
+model Category {
+  id    String @id @default(cuid())
+  name  String @unique
+  units DemoUnit[]
+}
+
+// デモ機。status: AVAILABLE | RESERVED | LOANED | MAINTENANCE | RETIRED
+model DemoUnit {
+  id           String    @id @default(cuid())
+  assetNo      String    @unique
+  name         String
+  modelNumber  String
+  maker        String?
+  serialNumber String?
+  accessories  String?
+  purchaseDate DateTime?
+  status       String    @default("AVAILABLE")
+  imageUrl     String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  homeLocationId String
+  homeLocation   Location @relation("HomeLocation", fields: [homeLocationId], references: [id])
+
+  reservations Reservation[]
+  maintenance  MaintenanceRecord[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([homeLocationId])
+}
+
+// 予約 / 貸出。status: REQUESTED | CONFIRMED | PICKED_UP | RETURNED | CANCELLED
+model Reservation {
+  id              String   @id @default(cuid())
+  customerCompany String
+  customerName    String?
+  endUser         String?  // 納入先（エンドユーザー）
+  projectName     String
+  startDate       DateTime // 予約枠の開始
+  endDate         DateTime // 予約枠の終了（返却予定）
+  shipDate        DateTime? // 実際の出荷日
+  status          String   @default("REQUESTED")
+  notes           String?
+
+  // 出庫（チェックアウト）
+  pickedUpAt         DateTime?
+  checkoutNote       String?
+  shippingTrackingNo String?  // 送り状No.
+  partsChecked       Boolean  @default(false) // 同梱部品（ネジ等）確認
+  maintenanceChecked Boolean  @default(false) // 整備完了確認
+  inverterChecked    Boolean  @default(false) // インバーター確認
+
+  // 返却（チェックイン）
+  returnedAt DateTime?
+  returnNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  demoUnitId String
+  demoUnit   DemoUnit @relation(fields: [demoUnitId], references: [id])
+
+  requestedById String
+  requestedBy   User   @relation("RequestedBy", fields: [requestedById], references: [id])
+
+  pickedUpById String?
+  pickedUpBy   User?   @relation("PickedUpBy", fields: [pickedUpById], references: [id])
+
+  returnedById String?
+  returnedBy   User?   @relation("ReturnedBy", fields: [returnedById], references: [id])
+
+  pickupLocationId String
+  pickupLocation   Location @relation("PickupLocation", fields: [pickupLocationId], references: [id])
+
+  returnLocationId String
+  returnLocation   Location @relation("ReturnLocation", fields: [returnLocationId], references: [id])
+
+  @@index([demoUnitId, startDate, endDate])
+  @@index([status])
+}
+
+// 点検・修理。type: INSPECTION | REPAIR
+model MaintenanceRecord {
+  id          String    @id @default(cuid())
+  type        String    @default("INSPECTION")
+  startDate   DateTime
+  endDate     DateTime?
+  description String
+  cost        Int?
+  createdAt   DateTime  @default(now())
+
+  demoUnitId String
+  demoUnit   DemoUnit @relation(fields: [demoUnitId], references: [id])
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  @@index([demoUnitId, startDate, endDate])
+}
