@@ -104,6 +104,56 @@ export async function createUser(
   return { ok: true };
 }
 
+export async function updateUser(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const me = await assertRole("ADMIN");
+  const id = fd(formData, "id");
+
+  const parsed = userSchema.safeParse({
+    name: fd(formData, "name"),
+    email: fd(formData, "email"),
+    role: fd(formData, "role"),
+    locationId: fd(formData, "locationId"),
+    password: fd(formData, "password"),
+  });
+  if (!parsed.success) {
+    return { error: "入力を確認してください", fieldErrors: zodFieldErrors(parsed.error) };
+  }
+
+  const current = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!current) return { error: "ユーザーが見つかりません" };
+
+  if (id === me.id && parsed.data.role !== "ADMIN") {
+    return { error: "自分自身の権限は変更できません" };
+  }
+
+  const dup = await prisma.user.findFirst({
+    where: { email: parsed.data.email, NOT: { id } },
+    select: { id: true },
+  });
+  if (dup) return { error: "そのメールアドレスは既に登録されています" };
+
+  await prisma.user.update({
+    where: { id },
+    data: {
+      name: parsed.data.name,
+      email: parsed.data.email,
+      role: parsed.data.role,
+      locationId: parsed.data.locationId,
+      ...(parsed.data.password
+        ? { passwordHash: await bcrypt.hash(parsed.data.password, 10) }
+        : {}),
+    },
+  });
+  revalidatePath("/masters");
+  return { ok: true };
+}
+
 export async function toggleUserActive(formData: FormData): Promise<void> {
   await assertRole("ADMIN");
   const id = fd(formData, "id");
@@ -111,4 +161,41 @@ export async function toggleUserActive(formData: FormData): Promise<void> {
   if (!u) return;
   await prisma.user.update({ where: { id }, data: { active: !u.active } });
   revalidatePath("/masters");
+}
+
+export async function deleteUser(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const me = await assertRole("ADMIN");
+  const id = fd(formData, "id");
+  if (id === me.id) {
+    return { error: "自分自身のアカウントは削除できません" };
+  }
+
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  if (!user) return { error: "ユーザーが見つかりません" };
+
+  // 予約・点検記録から参照されているユーザーは削除不可（履歴が壊れるため）
+  const [resvCount, maintCount] = await Promise.all([
+    prisma.reservation.count({
+      where: {
+        OR: [
+          { requestedById: id },
+          { pickedUpById: id },
+          { returnedById: id },
+        ],
+      },
+    }),
+    prisma.maintenanceRecord.count({ where: { createdById: id } }),
+  ]);
+  if (resvCount + maintCount > 0) {
+    return {
+      error: `予約 ${resvCount} 件・点検記録 ${maintCount} 件に紐づくため削除できません。「無効化」を使ってください。`,
+    };
+  }
+
+  await prisma.user.delete({ where: { id } });
+  revalidatePath("/masters");
+  return { ok: true };
 }

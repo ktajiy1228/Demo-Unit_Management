@@ -54,7 +54,7 @@ export function ScheduleTimeline({
       <div className="min-w-fit">
         {/* 日付ヘッダ */}
         <div className="flex border-b border-slate-200 bg-slate-50">
-          <div className="sticky left-0 z-10 w-44 shrink-0 border-r border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+          <div className="sticky left-0 z-10 w-72 shrink-0 border-r border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
             デモ機
           </div>
           <div className="relative" style={{ width: trackW }}>
@@ -78,11 +78,11 @@ export function ScheduleTimeline({
 
         {/* 行 */}
         {units.map((u) => (
-          <div key={u.id} className="flex border-b border-slate-100">
-            <div className="sticky left-0 z-10 w-44 shrink-0 border-r border-slate-200 bg-white px-3 py-2">
+          <div key={u.id} className="flex items-stretch border-b border-slate-100">
+            <div className="sticky left-0 z-10 w-72 shrink-0 border-r border-slate-200 bg-white px-3 py-2">
               <Link
                 href={`/units/${u.id}`}
-                className="block truncate text-sm font-medium text-slate-900 hover:underline"
+                className="block whitespace-normal break-words text-sm font-medium leading-snug text-slate-900 hover:underline"
               >
                 {u.name}
               </Link>
@@ -100,7 +100,7 @@ export function ScheduleTimeline({
             </div>
 
             <div
-              className="relative h-12"
+              className="relative min-h-12 self-stretch"
               style={{ width: trackW }}
             >
               {/* 週末の縦帯 */}
@@ -135,7 +135,7 @@ export function ScheduleTimeline({
                 const inner = (
                   <div
                     className={cn(
-                      "absolute top-2 flex h-8 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white",
+                      "absolute top-1/2 flex h-8 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white",
                       color,
                     )}
                     style={{

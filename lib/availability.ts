@@ -26,7 +26,6 @@ function normalize(value: string | Date): Date {
 export type ConflictInfo = {
   reservations: {
     id: string;
-    projectName: string;
     customerCompany: string;
     startDate: Date;
     endDate: Date;
@@ -61,7 +60,6 @@ export async function getConflicts(
     },
     select: {
       id: true,
-      projectName: true,
       customerCompany: true,
       startDate: true,
       endDate: true,
@@ -191,7 +189,7 @@ export async function recomputeUnitStatus(unitId: string): Promise<string> {
       const upcoming = await prisma.reservation.findFirst({
         where: {
           demoUnitId: unitId,
-          status: { in: [RESV_STATUS.REQUESTED, RESV_STATUS.CONFIRMED] },
+          status: RESV_STATUS.CONFIRMED,
           endDate: { gte: now },
         },
         select: { id: true },

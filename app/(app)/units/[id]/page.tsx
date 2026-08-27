@@ -13,7 +13,7 @@ import {
 } from "@/components/ui";
 import { ResvStatusBadge, UnitStatusBadge, OverdueBadge } from "@/components/StatusBadge";
 import { MAINT_TYPE_LABEL, ACTIVE_RESV_STATUSES } from "@/lib/constants";
-import { fmtDate, isOverdue } from "@/lib/format";
+import { fmtDate, fmtDateW, isOverdue } from "@/lib/format";
 import { MaintenancePanel } from "./MaintenancePanel";
 import { closeMaintenance } from "../actions";
 
@@ -117,7 +117,7 @@ export default async function UnitDetailPage({
                 <thead>
                   <tr>
                     <Th>期間</Th>
-                    <Th>顧客 / 案件</Th>
+                    <Th>顧客</Th>
                     <Th>担当</Th>
                     <Th>状態</Th>
                   </tr>
@@ -127,12 +127,11 @@ export default async function UnitDetailPage({
                     <tr key={r.id} className="hover:bg-slate-50">
                       <Td className="tabular whitespace-nowrap">
                         <Link href={`/reservations/${r.id}`} className="underline">
-                          {fmtDate(r.startDate)} 〜 {fmtDate(r.endDate)}
+                          {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
                         </Link>
                       </Td>
                       <Td>
                         <div>{r.customerCompany}</div>
-                        <div className="text-xs text-slate-500">{r.projectName}</div>
                       </Td>
                       <Td>{r.requestedBy.name}</Td>
                       <Td className="whitespace-nowrap">
@@ -159,7 +158,7 @@ export default async function UnitDetailPage({
                 <thead>
                   <tr>
                     <Th>期間</Th>
-                    <Th>顧客 / 案件</Th>
+                    <Th>顧客</Th>
                     <Th>状態</Th>
                   </tr>
                 </thead>
@@ -168,12 +167,11 @@ export default async function UnitDetailPage({
                     <tr key={r.id} className="hover:bg-slate-50">
                       <Td className="tabular whitespace-nowrap">
                         <Link href={`/reservations/${r.id}`} className="underline">
-                          {fmtDate(r.startDate)} 〜 {fmtDate(r.endDate)}
+                          {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
                         </Link>
                       </Td>
                       <Td>
                         <div>{r.customerCompany}</div>
-                        <div className="text-xs text-slate-500">{r.projectName}</div>
                       </Td>
                       <Td>
                         <ResvStatusBadge status={r.status} />

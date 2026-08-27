@@ -28,25 +28,42 @@ export const unitSchema = z.object({
 });
 export type UnitInput = z.infer<typeof unitSchema>;
 
-export const reservationSchema = z
-  .object({
-    demoUnitId: z.string().min(1, "デモ機を選択してください"),
-    requestedById: z.string().min(1, "担当営業を選択してください"),
-    customerCompany: z.string().trim().min(1, "顧客会社名は必須です").max(160),
-    customerName: z.string().trim().max(120).optional().or(z.literal("")),
-    endUser: z.string().trim().max(160).optional().or(z.literal("")),
-    projectName: z.string().trim().min(1, "案件名は必須です").max(160),
-    startDate: dateString,
-    endDate: dateString,
-    pickupLocationId: z.string().min(1, "受渡拠点を選択してください"),
-    returnLocationId: z.string().min(1, "返却拠点を選択してください"),
-    notes: z.string().trim().max(2000).optional().or(z.literal("")),
-  })
-  .refine((v) => Date.parse(v.endDate) >= Date.parse(v.startDate), {
-    message: "返却日は貸出日以降にしてください",
-    path: ["endDate"],
-  });
+const reservationFields = z.object({
+  demoUnitId: z.string().min(1, "デモ機を選択してください"),
+  requestedById: z.string().min(1, "担当営業を選択してください"),
+  customerCompany: z.string().trim().min(1, "顧客会社名は必須です").max(160),
+  customerName: z.string().trim().max(120).optional().or(z.literal("")),
+  shipToName: z.string().trim().max(160).optional().or(z.literal("")),
+  shipToContact: z.string().trim().max(120).optional().or(z.literal("")),
+  shipToPhone: z.string().trim().max(40).optional().or(z.literal("")),
+  shipToPostal: z.string().trim().max(16).optional().or(z.literal("")),
+  shipToAddress: z.string().trim().max(300).optional().or(z.literal("")),
+  startDate: dateString,
+  endDate: dateString,
+  plannedShipDate: z.string().optional().or(z.literal("")),
+  pickupLocationId: z.string().min(1, "発送拠点を選択してください"),
+  returnLocationId: z.string().min(1, "返却拠点を選択してください"),
+  notes: z.string().trim().max(2000).optional().or(z.literal("")),
+});
+
+const endAfterStart = (v: { startDate: string; endDate: string }) =>
+  Date.parse(v.endDate) >= Date.parse(v.startDate);
+const endAfterStartMsg = {
+  message: "返却日は貸出日以降にしてください",
+  path: ["endDate"],
+};
+
+export const reservationSchema = reservationFields.refine(
+  endAfterStart,
+  endAfterStartMsg,
+);
 export type ReservationInput = z.infer<typeof reservationSchema>;
+
+// 予約編集ではデモ機（機種）は変更させない。
+export const reservationEditSchema = reservationFields
+  .omit({ demoUnitId: true })
+  .refine(endAfterStart, endAfterStartMsg);
+export type ReservationEditInput = z.infer<typeof reservationEditSchema>;
 
 export const availabilityQuerySchema = z.object({
   startDate: dateString,
@@ -64,8 +81,11 @@ const checkbox = z.union([z.literal("on"), z.literal("")]).optional();
 // 出庫（チェックアウト）: 送り状No. と出荷前チェック
 export const checkoutSchema = z.object({
   note: z.string().trim().max(2000).optional().or(z.literal("")),
+  carrier: z.string().trim().max(80).optional().or(z.literal("")),
   shippingTrackingNo: z.string().trim().max(80).optional().or(z.literal("")),
   shipDate: z.string().optional().or(z.literal("")),
+  desiredArrivalDate: z.string().optional().or(z.literal("")),
+  desiredArrivalTime: z.string().trim().max(40).optional().or(z.literal("")),
   partsChecked: checkbox,
   maintenanceChecked: checkbox,
   inverterChecked: checkbox,

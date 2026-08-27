@@ -77,6 +77,20 @@ function CheckoutForm({ id }: { id: string }) {
       <input type="hidden" name="id" value={id} />
       {state.error && <Alert tone="error">{state.error}</Alert>}
 
+      <div>
+        <label
+          htmlFor="carrier"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
+          運送会社名
+        </label>
+        <Input
+          id="carrier"
+          name="carrier"
+          placeholder="ヤマト運輸 / 佐川急便 / 西濃運輸 など"
+        />
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label
@@ -99,6 +113,33 @@ function CheckoutForm({ id }: { id: string }) {
             出荷日
           </label>
           <Input id="shipDate" name="shipDate" type="date" defaultValue={today} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label
+            htmlFor="desiredArrivalDate"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
+            着指定日
+          </label>
+          <Input id="desiredArrivalDate" name="desiredArrivalDate" type="date" />
+        </div>
+        <div>
+          <label
+            htmlFor="desiredArrivalTime"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
+            時間指定
+          </label>
+          <Input
+            id="desiredArrivalTime"
+            name="desiredArrivalTime"
+            type="text"
+            defaultValue="AM"
+            placeholder="AM / PM / 午前中 / 14〜16時 など"
+          />
         </div>
       </div>
 
@@ -158,9 +199,7 @@ export function LifecycleActions({
 }) {
   return (
     <div className="flex flex-wrap items-start gap-2">
-      {(status === "REQUESTED" || status === "CONFIRMED") && (
-        <CheckoutForm id={id} />
-      )}
+      {status === "CONFIRMED" && <CheckoutForm id={id} />}
       {status === "PICKED_UP" && <CheckinForm id={id} />}
     </div>
   );

@@ -12,15 +12,22 @@ import {
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
 import { RESV_STATUS_LABEL } from "@/lib/constants";
 import { cn } from "@/lib/cn";
-import { fmtDate, isOverdue } from "@/lib/format";
+import { fmtDate, fmtDateW, isOverdue } from "@/lib/format";
+
+// 一覧の並び: 状態（確定→貸出中→返却済み→キャンセル）を最優先。
+const STATUS_ORDER: Record<string, number> = {
+  CONFIRMED: 0,
+  PICKED_UP: 1,
+  RETURNED: 2,
+  CANCELLED: 3,
+};
 
 export const metadata = { title: "予約一覧 | デモ機運用管理" };
 
 const TABS: { key: string; label: string }[] = [
   { key: "", label: "すべて" },
-  { key: "REQUESTED", label: "申請中" },
   { key: "CONFIRMED", label: "確定" },
-  { key: "PICKED_UP", label: "出庫済み" },
+  { key: "PICKED_UP", label: "貸出中" },
   { key: "RETURNED", label: "返却済み" },
   { key: "CANCELLED", label: "キャンセル" },
 ];
@@ -28,19 +35,49 @@ const TABS: { key: string; label: string }[] = [
 export default async function ReservationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; requestedById?: string }>;
 }) {
   await requireUser();
-  const { status } = await searchParams;
+  const { status, requestedById } = await searchParams;
 
-  const reservations = await prisma.reservation.findMany({
-    where: status ? { status } : {},
-    include: {
-      demoUnit: true,
-      requestedBy: true,
-      pickupLocation: true,
-    },
-    orderBy: [{ startDate: "desc" }],
+  const [rows, users] = await Promise.all([
+    prisma.reservation.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(requestedById ? { requestedById } : {}),
+      },
+      include: {
+        demoUnit: true,
+        requestedBy: true,
+        pickupLocation: true,
+      },
+    }),
+    prisma.user.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  // status / requestedById を保持したままリンク先を組み立てる。
+  const hrefWith = (next: { status?: string; requestedById?: string }) => {
+    const st = next.status ?? status;
+    const rb = next.requestedById ?? requestedById;
+    const p = new URLSearchParams();
+    if (st) p.set("status", st);
+    if (rb) p.set("requestedById", rb);
+    const qs = p.toString();
+    return qs ? `/reservations?${qs}` : "/reservations";
+  };
+
+  // 状態（確定→貸出中→返却済み→キャンセル）→ 出荷予定日 昇順 → 期間開始日 昇順。
+  // 出荷予定日が未設定の予約は末尾。
+  const reservations = rows.sort((a, b) => {
+    const s = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+    if (s !== 0) return s;
+    const ap = a.plannedShipDate?.getTime() ?? Infinity;
+    const bp = b.plannedShipDate?.getTime() ?? Infinity;
+    if (ap !== bp) return ap - bp;
+    return a.startDate.getTime() - b.startDate.getTime();
   });
 
   return (
@@ -51,11 +88,11 @@ export default async function ReservationsPage({
         actions={<LinkButton href="/reservations/new">＋ 新規予約</LinkButton>}
       />
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={t.key ? `/reservations?status=${t.key}` : "/reservations"}
+            href={hrefWith({ status: t.key })}
             className={cn(
               "rounded-full px-3 py-1 text-sm",
               (status ?? "") === t.key
@@ -66,6 +103,36 @@ export default async function ReservationsPage({
             {t.label}
           </Link>
         ))}
+
+        <form method="get" className="ml-auto flex gap-2">
+          {status && <input type="hidden" name="status" value={status} />}
+          <select
+            name="requestedById"
+            defaultValue={requestedById ?? ""}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm"
+          >
+            <option value="">担当者：すべて</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            絞り込み
+          </button>
+          {requestedById && (
+            <Link
+              href={hrefWith({ requestedById: "" })}
+              className="rounded-md px-2 py-1.5 text-sm text-slate-500 hover:text-slate-800"
+            >
+              解除
+            </Link>
+          )}
+        </form>
       </div>
 
       {reservations.length === 0 ? (
@@ -75,11 +142,12 @@ export default async function ReservationsPage({
           <Table>
             <thead>
               <tr>
+                <Th>出荷予定日</Th>
                 <Th>期間</Th>
                 <Th>デモ機</Th>
-                <Th>顧客 / 案件</Th>
+                <Th>顧客</Th>
                 <Th>担当</Th>
-                <Th>受渡拠点</Th>
+                <Th>発送拠点</Th>
                 <Th>送り状No.</Th>
                 <Th>状態</Th>
               </tr>
@@ -87,9 +155,12 @@ export default async function ReservationsPage({
             <tbody>
               {reservations.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50">
+                  <Td className="tabular whitespace-nowrap text-slate-600">
+                    {fmtDate(r.plannedShipDate)}
+                  </Td>
                   <Td className="tabular whitespace-nowrap">
                     <Link href={`/reservations/${r.id}`} className="underline">
-                      {fmtDate(r.startDate)} 〜 {fmtDate(r.endDate)}
+                      {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
                     </Link>
                   </Td>
                   <Td>
@@ -102,7 +173,6 @@ export default async function ReservationsPage({
                   </Td>
                   <Td>
                     <div>{r.customerCompany}</div>
-                    <div className="text-xs text-slate-500">{r.projectName}</div>
                   </Td>
                   <Td className="whitespace-nowrap">{r.requestedBy.name}</Td>
                   <Td className="whitespace-nowrap">{r.pickupLocation.name}</Td>

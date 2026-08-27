@@ -13,6 +13,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { FormState } from "@/lib/form";
+import { defaultPlannedShipDate, formatYmd, parseYmd } from "@/lib/business-days";
 
 type Option = { id: string; name: string };
 type UnitOption = {
@@ -21,6 +22,7 @@ type UnitOption = {
   name: string;
   modelNumber: string;
   categoryName: string;
+  locationId: string;
   locationName: string;
 };
 
@@ -44,16 +46,24 @@ export function ReservationForm({
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [endDateTouched, setEndDateTouched] = useState(false);
+  const [plannedShipDate, setPlannedShipDate] = useState("");
+  const [plannedShipTouched, setPlannedShipTouched] = useState(false);
   const [filterCategory, setFilterCategory] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
 
-  // 資料の運用: 基本は1週間貸出。貸出日を入れたら返却日を +7日 で初期化。
+  // 資料の運用: 基本は1週間貸出。貸出日を変えるたびに返却日を +7日 に更新する
+  // （返却日を手動で変更したあとは上書きしない）。
   function handleStartChange(value: string) {
     setStartDate(value);
-    if (value && !endDate) {
-      const d = new Date(value);
+    if (value && !endDateTouched) {
+      const d = parseYmd(value);
       d.setDate(d.getDate() + 7);
-      setEndDate(d.toISOString().slice(0, 10));
+      setEndDate(formatYmd(d));
+    }
+    // 出荷予定日: 貸出開始の2営業日前を既定に（手入力済みなら上書きしない）。
+    if (value && !plannedShipTouched) {
+      setPlannedShipDate(formatYmd(defaultPlannedShipDate(parseYmd(value))));
     }
   }
 
@@ -64,6 +74,21 @@ export function ReservationForm({
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [searched, setSearched] = useState(Boolean(defaultUnit));
+
+  // 発送拠点・返却拠点の既定は選択したデモ機の配置拠点。
+  const [pickupLocationId, setPickupLocationId] = useState(
+    defaultUnit?.locationId ?? "",
+  );
+  const [returnLocationId, setReturnLocationId] = useState(
+    defaultUnit?.locationId ?? "",
+  );
+
+  function selectUnit(id: string) {
+    setSelectedUnit(id);
+    const homeLocationId = units.find((u) => u.id === id)?.locationId ?? "";
+    setPickupLocationId(homeLocationId);
+    setReturnLocationId(homeLocationId);
+  }
 
   const search = useCallback(async () => {
     if (!startDate || !endDate) {
@@ -85,7 +110,11 @@ export function ReservationForm({
       const list: UnitOption[] = data.units ?? [];
       setUnits(list);
       setSearched(true);
-      if (!list.some((u) => u.id === selectedUnit)) setSelectedUnit("");
+      if (!list.some((u) => u.id === selectedUnit)) {
+        setSelectedUnit("");
+        setPickupLocationId("");
+        setReturnLocationId("");
+      }
       if (list.length === 0) setSearchMsg("この期間に空いているデモ機はありません。");
     } catch {
       setSearchMsg("検索に失敗しました。");
@@ -121,7 +150,10 @@ export function ReservationForm({
               id="endDate"
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setEndDateTouched(true);
+                setEndDate(e.target.value);
+              }}
               required
             />
           </Field>
@@ -176,7 +208,7 @@ export function ReservationForm({
                     name="unitPick"
                     className="mt-1"
                     checked={selectedUnit === u.id}
-                    onChange={() => setSelectedUnit(u.id)}
+                    onChange={() => selectUnit(u.id)}
                   />
                   <span className="text-sm">
                     <span className="font-medium text-slate-900">{u.name}</span>
@@ -224,6 +256,24 @@ export function ReservationForm({
             )}
           </div>
 
+          <Field
+            label="出荷予定日"
+            htmlFor="plannedShipDate"
+            error={fe.plannedShipDate}
+            hint="既定: 貸出開始日の2日前（土日祝はその前の平日）"
+          >
+            <Input
+              id="plannedShipDate"
+              name="plannedShipDate"
+              type="date"
+              value={plannedShipDate}
+              onChange={(e) => {
+                setPlannedShipTouched(true);
+                setPlannedShipDate(e.target.value);
+              }}
+            />
+          </Field>
+
           <Field label="担当営業" htmlFor="requestedById" required error={fe.requestedById}>
             <Select
               id="requestedById"
@@ -248,29 +298,52 @@ export function ReservationForm({
           <Field label="先方担当者" htmlFor="customerName" error={fe.customerName}>
             <Input id="customerName" name="customerName" />
           </Field>
-          <Field
-            label="納入先"
-            htmlFor="endUser"
-            error={fe.endUser}
-            hint="エンドユーザー（例: 東海住電精密）"
-          >
-            <Input id="endUser" name="endUser" />
-          </Field>
-          <Field label="案件名" htmlFor="projectName" required error={fe.projectName}>
-            <Input id="projectName" name="projectName" required />
-          </Field>
+
+          <fieldset className="rounded-md border border-slate-200 p-3">
+            <legend className="px-1 text-sm font-medium text-slate-700">
+              送付先（デモ機の配送先）
+            </legend>
+            <div className="space-y-3">
+              <Field
+                label="送付先名称"
+                htmlFor="shipToName"
+                error={fe.shipToName}
+                hint="現場名・会社名など"
+              >
+                <Input id="shipToName" name="shipToName" />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="送付先担当者" htmlFor="shipToContact" error={fe.shipToContact}>
+                  <Input id="shipToContact" name="shipToContact" />
+                </Field>
+                <Field label="電話番号" htmlFor="shipToPhone" error={fe.shipToPhone}>
+                  <Input id="shipToPhone" name="shipToPhone" type="tel" />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
+                <Field label="郵便番号" htmlFor="shipToPostal" error={fe.shipToPostal}>
+                  <Input id="shipToPostal" name="shipToPostal" placeholder="123-4567" />
+                </Field>
+                <Field label="住所" htmlFor="shipToAddress" error={fe.shipToAddress}>
+                  <Input id="shipToAddress" name="shipToAddress" />
+                </Field>
+              </div>
+            </div>
+          </fieldset>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
-              label="受渡拠点"
+              label="発送拠点"
               htmlFor="pickupLocationId"
               required
               error={fe.pickupLocationId}
+              hint="既定はデモ機の配置拠点"
             >
               <Select
                 id="pickupLocationId"
                 name="pickupLocationId"
-                defaultValue=""
+                value={pickupLocationId}
+                onChange={(e) => setPickupLocationId(e.target.value)}
                 required
               >
                 <option value="" disabled>
@@ -288,11 +361,13 @@ export function ReservationForm({
               htmlFor="returnLocationId"
               required
               error={fe.returnLocationId}
+              hint="既定はデモ機の配置拠点"
             >
               <Select
                 id="returnLocationId"
                 name="returnLocationId"
-                defaultValue=""
+                value={returnLocationId}
+                onChange={(e) => setReturnLocationId(e.target.value)}
                 required
               >
                 <option value="" disabled>

@@ -43,6 +43,7 @@ export async function GET(req: Request) {
       name: u.name,
       modelNumber: u.modelNumber,
       categoryName: u.category.name,
+      locationId: u.homeLocationId,
       locationName: u.homeLocation.name,
     })),
   });

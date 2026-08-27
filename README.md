@@ -30,6 +30,13 @@ npm run db:seed              # サンプルデータ投入
 npm run dev                  # http://localhost:3000
 ```
 
+シードのデモ機は要求元の `デモ機マスタ.csv`（列: 備品ID / 備品名 / カテゴリー / シリアル№、
+82台・8カテゴリー）をそのまま取り込みます。備品ID＝`assetNo`、シリアル№＝`serialNumber`、
+型式（`modelNumber`）は備品IDの末尾連番を除いた値、「※不点灯」の器具は継続中の修理として
+登録（貸出不可）。配置拠点はカテゴリー単位で本社／尼崎倉庫に振り分けています
+（`prisma/seed.ts` の `CATEGORY_HOME`）。CSV 更新時は `prisma/seed.ts` の `UNIT_ROWS` を
+差し替えて `npm run db:seed` を実行してください。
+
 DB を初期状態に戻したいとき:
 
 ```bash

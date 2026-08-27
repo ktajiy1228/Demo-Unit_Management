@@ -69,9 +69,7 @@ export default async function SchedulePage({
       ...u.reservations.map((r) => ({
         id: r.id,
         kind: "reservation" as const,
-        label: r.endUser
-          ? `${r.customerCompany}（${r.endUser}）`
-          : r.customerCompany,
+        label: r.customerCompany,
         status: r.status,
         start: r.startDate,
         end: r.endDate,
@@ -172,13 +170,10 @@ export default async function SchedulePage({
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded bg-slate-400" />申請中
-        </span>
-        <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded bg-indigo-500" />確定
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-3 w-3 rounded bg-blue-600" />出庫済み
+          <span className="inline-block h-3 w-3 rounded bg-blue-600" />貸出中
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded bg-orange-500" />点検/修理

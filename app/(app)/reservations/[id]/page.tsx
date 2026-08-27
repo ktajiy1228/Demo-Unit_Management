@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/rbac";
-import { Alert, Card, PageHeader } from "@/components/ui";
+import { Alert, Card, LinkButton, PageHeader } from "@/components/ui";
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
-import { fmtDate, fmtDateTime, isOverdue, loanDays } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtDateW, isOverdue, loanDays } from "@/lib/format";
 import { LifecycleActions } from "./LifecycleActions";
-import { cancelReservation, confirmReservation } from "../actions";
+import { cancelReservation } from "../actions";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -39,18 +39,22 @@ export default async function ReservationDetailPage({
   if (!r) notFound();
 
   const overdue = isOverdue(r.endDate, r.status);
-  const canConfirm = r.status === "REQUESTED";
   const canCancel = !["RETURNED", "CANCELLED"].includes(r.status);
 
   return (
     <>
       <PageHeader
         title={`予約: ${r.demoUnit.name}`}
-        description={`${r.customerCompany}・${r.projectName}`}
+        description={r.customerCompany}
         actions={
           <>
             <ResvStatusBadge status={r.status} />
             {overdue && <OverdueBadge />}
+            {canCancel && (
+              <LinkButton href={`/reservations/${r.id}/edit`} variant="secondary">
+                編集
+              </LinkButton>
+            )}
           </>
         }
       />
@@ -58,7 +62,7 @@ export default async function ReservationDetailPage({
       {overdue && (
         <div className="mb-4">
           <Alert tone="error">
-            返却予定日（{fmtDate(r.endDate)}）を過ぎています。至急返却処理を行ってください。
+            返却予定日（{fmtDateW(r.endDate)}）を過ぎています。至急返却処理を行ってください。
           </Alert>
         </div>
       )}
@@ -75,21 +79,56 @@ export default async function ReservationDetailPage({
             <Row label="カテゴリ">{r.demoUnit.category.name}</Row>
             <Row label="期間">
               <span className="tabular">
-                {fmtDate(r.startDate)} 〜 {fmtDate(r.endDate)}
+                {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
               </span>{" "}
               <span className="text-slate-500">
                 （{loanDays(r.startDate, r.endDate)}日間）
               </span>
             </Row>
+            <Row label="出荷予定日">
+              {r.plannedShipDate ? fmtDateW(r.plannedShipDate) : "-"}
+            </Row>
             <Row label="担当営業">{r.requestedBy.name}</Row>
             <Row label="顧客会社">{r.customerCompany}</Row>
             <Row label="先方担当">{r.customerName}</Row>
-            <Row label="納入先">{r.endUser}</Row>
-            <Row label="案件名">{r.projectName}</Row>
-            <Row label="受渡拠点">{r.pickupLocation.name}</Row>
             <Row label="返却拠点">{r.returnLocation.name}</Row>
             <Row label="備考">
               <span className="whitespace-pre-wrap">{r.notes}</span>
+            </Row>
+          </dl>
+
+          <dl className="mt-3 border-t border-slate-100 pt-3">
+            <div className="mb-1 text-xs font-semibold text-slate-500">
+              送付先（デモ機の配送先）
+            </div>
+            <Row label="送付先名称">{r.shipToName}</Row>
+            <Row label="担当者">{r.shipToContact}</Row>
+            <Row label="電話番号">
+              <span className="tabular">{r.shipToPhone}</span>
+            </Row>
+            <Row label="住所">
+              {r.shipToPostal || r.shipToAddress ? (
+                <span>
+                  {r.shipToPostal && (
+                    <span className="tabular">〒{r.shipToPostal} </span>
+                  )}
+                  {r.shipToAddress}
+                </span>
+              ) : (
+                "-"
+              )}
+            </Row>
+          </dl>
+
+          <dl className="mt-3 border-t border-slate-100 pt-3">
+            <Row label="予約ID">
+              <span className="tabular text-slate-500">{r.id}</span>
+            </Row>
+            <Row label="作成日時">
+              <span className="text-slate-500">{fmtDateTime(r.createdAt)}</span>
+            </Row>
+            <Row label="更新日時">
+              <span className="text-slate-500">{fmtDateTime(r.updatedAt)}</span>
             </Row>
           </dl>
         </Card>
@@ -98,18 +137,6 @@ export default async function ReservationDetailPage({
           <Card className="p-4">
             <h2 className="mb-3 text-sm font-semibold text-slate-700">操作</h2>
             <div className="space-y-2">
-              {canConfirm && (
-                <form action={confirmReservation}>
-                  <input type="hidden" name="id" value={r.id} />
-                  <button
-                    type="submit"
-                    className="w-full rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100"
-                  >
-                    予約を確定する
-                  </button>
-                </form>
-              )}
-
               <LifecycleActions id={r.id} status={r.status} />
 
               {canCancel && (
@@ -139,6 +166,11 @@ export default async function ReservationDetailPage({
               <Row label="出荷日">
                 {r.shipDate ? fmtDate(r.shipDate) : "-"}
               </Row>
+              <Row label="着指定日">
+                {r.desiredArrivalDate ? fmtDate(r.desiredArrivalDate) : "-"}
+              </Row>
+              <Row label="時間指定">{r.desiredArrivalTime}</Row>
+              <Row label="運送会社">{r.carrier}</Row>
               <Row label="送り状No.">
                 <span className="tabular">{r.shippingTrackingNo}</span>
               </Row>

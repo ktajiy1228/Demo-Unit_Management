@@ -56,6 +56,7 @@ export default async function NewReservationPage({
                 name: unit.name,
                 modelNumber: unit.modelNumber,
                 categoryName: unit.category.name,
+                locationId: unit.homeLocationId,
                 locationName: unit.homeLocation.name,
               }
             : undefined

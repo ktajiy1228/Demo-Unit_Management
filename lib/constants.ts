@@ -50,7 +50,7 @@ export type ResvStatus = (typeof RESV_STATUS)[keyof typeof RESV_STATUS];
 export const RESV_STATUS_LABEL: Record<string, string> = {
   REQUESTED: "申請中",
   CONFIRMED: "確定",
-  PICKED_UP: "出庫済み",
+  PICKED_UP: "貸出中",
   RETURNED: "返却済み",
   CANCELLED: "キャンセル",
 };

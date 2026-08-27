@@ -2,10 +2,11 @@ import Link from "next/link";
 import { addDays, startOfDay } from "date-fns";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/rbac";
-import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
 import { RESV_STATUS } from "@/lib/constants";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, fmtDateW } from "@/lib/format";
+import { logout } from "./actions";
 
 export const metadata = { title: "ダッシュボード | デモ機運用管理" };
 
@@ -15,7 +16,6 @@ function ResvLine({
   r: {
     id: string;
     customerCompany: string;
-    projectName: string;
     startDate: Date;
     endDate: Date;
     status: string;
@@ -32,12 +32,12 @@ function ResvLine({
           {r.demoUnit.assetNo}
         </span>
         <div className="truncate text-xs text-slate-500">
-          {r.customerCompany}・{r.projectName}
+          {r.customerCompany}
         </div>
       </div>
       <div className="shrink-0 text-right">
         <div className="tabular text-xs text-slate-500">
-          {fmtDate(r.startDate)}〜{fmtDate(r.endDate)}
+          {fmtDateW(r.startDate)}〜{fmtDateW(r.endDate)}
         </div>
         <ResvStatusBadge status={r.status} />
       </div>
@@ -45,37 +45,50 @@ function ResvLine({
   );
 }
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ locationId?: string }>;
-}) {
+export default async function DashboardPage() {
   const user = await requireUser();
-  const sp = await searchParams;
 
   const todayStart = startOfDay(new Date());
   const tomorrowStart = addDays(todayStart, 1);
-  const locId = sp.locationId;
+  const dayAfterTomorrowStart = addDays(todayStart, 2);
 
-  const unitWhere = locId ? { demoUnit: { homeLocationId: locId } } : {};
-
-  const [locations, todaysPickups, todaysReturns, overdue, maintenance, stats] =
-    await Promise.all([
-      prisma.location.findMany({ orderBy: { code: "asc" } }),
+  const [
+    todaysShipments,
+    todaysReturns,
+    tomorrowsShipments,
+    tomorrowsReturns,
+    overdue,
+    maintenance,
+    stats,
+  ] = await Promise.all([
       prisma.reservation.findMany({
         where: {
-          status: { in: [RESV_STATUS.REQUESTED, RESV_STATUS.CONFIRMED] },
-          startDate: { gte: todayStart, lt: tomorrowStart },
-          ...unitWhere,
+          status: RESV_STATUS.CONFIRMED,
+          plannedShipDate: { gte: todayStart, lt: tomorrowStart },
         },
         include: { demoUnit: true },
-        orderBy: { startDate: "asc" },
+        orderBy: { plannedShipDate: "asc" },
       }),
       prisma.reservation.findMany({
         where: {
           status: RESV_STATUS.PICKED_UP,
           endDate: { gte: todayStart, lt: tomorrowStart },
-          ...unitWhere,
+        },
+        include: { demoUnit: true },
+        orderBy: { endDate: "asc" },
+      }),
+      prisma.reservation.findMany({
+        where: {
+          status: RESV_STATUS.CONFIRMED,
+          plannedShipDate: { gte: tomorrowStart, lt: dayAfterTomorrowStart },
+        },
+        include: { demoUnit: true },
+        orderBy: { plannedShipDate: "asc" },
+      }),
+      prisma.reservation.findMany({
+        where: {
+          status: RESV_STATUS.PICKED_UP,
+          endDate: { gte: tomorrowStart, lt: dayAfterTomorrowStart },
         },
         include: { demoUnit: true },
         orderBy: { endDate: "asc" },
@@ -84,7 +97,6 @@ export default async function DashboardPage({
         where: {
           status: RESV_STATUS.PICKED_UP,
           endDate: { lt: todayStart },
-          ...unitWhere,
         },
         include: { demoUnit: true },
         orderBy: { endDate: "asc" },
@@ -93,7 +105,6 @@ export default async function DashboardPage({
         where: {
           startDate: { lte: todayStart },
           OR: [{ endDate: null }, { endDate: { gte: todayStart } }],
-          ...(locId ? { demoUnit: { homeLocationId: locId } } : {}),
         },
         include: { demoUnit: true },
         orderBy: { startDate: "asc" },
@@ -101,7 +112,6 @@ export default async function DashboardPage({
       prisma.demoUnit.groupBy({
         by: ["status"],
         _count: { _all: true },
-        where: locId ? { homeLocationId: locId } : {},
       }),
     ]);
 
@@ -113,46 +123,56 @@ export default async function DashboardPage({
       <PageHeader
         title="ダッシュボード"
         description={`${user.name} さん`}
-        actions={<LinkButton href="/reservations/new">＋ 新規予約</LinkButton>}
+        actions={
+          <>
+            <LinkButton href="/reservations/new">＋ 新規予約</LinkButton>
+            <form action={logout}>
+              <Button type="submit" variant="secondary">
+                ログアウト
+              </Button>
+            </form>
+          </>
+        }
       />
 
-      <form method="get" className="mb-4 flex gap-2">
-        <select
-          name="locationId"
-          defaultValue={locId ?? ""}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全拠点</option>
-          {locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-        >
-          表示
-        </button>
-      </form>
-
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
-          { label: "空き", value: statusCount("AVAILABLE"), tone: "text-emerald-700" },
-          { label: "予約あり", value: statusCount("RESERVED"), tone: "text-amber-700" },
-          { label: "貸出中", value: statusCount("LOANED"), tone: "text-blue-700" },
+          {
+            label: "予約あり",
+            value: statusCount("RESERVED"),
+            tone: "text-amber-700",
+            href: "/reservations?status=CONFIRMED",
+          },
+          {
+            label: "貸出中",
+            value: statusCount("LOANED"),
+            tone: "text-blue-700",
+            href: "/reservations?status=PICKED_UP",
+          },
           {
             label: "点検・修理中",
             value: statusCount("MAINTENANCE"),
             tone: "text-orange-700",
           },
-        ].map((s) => (
-          <Card key={s.label} className="p-3">
-            <div className="text-xs text-slate-500">{s.label}</div>
-            <div className={`text-2xl font-bold ${s.tone}`}>{s.value}</div>
-          </Card>
-        ))}
+        ].map((s) => {
+          const body = (
+            <>
+              <div className="text-xs text-slate-500">{s.label}</div>
+              <div className={`text-2xl font-bold ${s.tone}`}>{s.value}</div>
+            </>
+          );
+          return s.href ? (
+            <Link key={s.label} href={s.href} className="block">
+              <Card className="p-3 transition-colors hover:bg-slate-50">
+                {body}
+              </Card>
+            </Link>
+          ) : (
+            <Card key={s.label} className="p-3">
+              {body}
+            </Card>
+          );
+        })}
       </div>
 
       {overdue.length > 0 && (
@@ -171,13 +191,13 @@ export default async function DashboardPage({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">
-            本日の出庫予定（{todaysPickups.length}）
+            本日の出荷予定（{todaysShipments.length}）
           </h2>
-          {todaysPickups.length === 0 ? (
-            <EmptyState>本日の出庫予定はありません。</EmptyState>
+          {todaysShipments.length === 0 ? (
+            <EmptyState>本日の出荷予定はありません。</EmptyState>
           ) : (
             <ul>
-              {todaysPickups.map((r) => (
+              {todaysShipments.map((r) => (
                 <ResvLine key={r.id} r={r} />
               ))}
             </ul>
@@ -193,6 +213,36 @@ export default async function DashboardPage({
           ) : (
             <ul>
               {todaysReturns.map((r) => (
+                <ResvLine key={r.id} r={r} />
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">
+            明日の出荷予定（{tomorrowsShipments.length}）
+          </h2>
+          {tomorrowsShipments.length === 0 ? (
+            <EmptyState>明日の出荷予定はありません。</EmptyState>
+          ) : (
+            <ul>
+              {tomorrowsShipments.map((r) => (
+                <ResvLine key={r.id} r={r} />
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">
+            明日の返却予定（{tomorrowsReturns.length}）
+          </h2>
+          {tomorrowsReturns.length === 0 ? (
+            <EmptyState>明日の返却予定はありません。</EmptyState>
+          ) : (
+            <ul>
+              {tomorrowsReturns.map((r) => (
                 <ResvLine key={r.id} r={r} />
               ))}
             </ul>

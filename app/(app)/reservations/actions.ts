@@ -8,11 +8,13 @@ import { fd, zodFieldErrors, type FormState } from "@/lib/form";
 import {
   checkoutSchema,
   lifecycleNoteSchema,
+  reservationEditSchema,
   reservationSchema,
 } from "@/lib/validators";
 import { getConflicts, isUnitAvailable, recomputeUnitStatus } from "@/lib/availability";
 import { RESV_STATUS } from "@/lib/constants";
 import { fmtDate } from "@/lib/format";
+import { defaultPlannedShipDate, parseYmd } from "@/lib/business-days";
 
 export async function createReservation(
   _prev: FormState,
@@ -25,10 +27,14 @@ export async function createReservation(
     requestedById: fd(formData, "requestedById"),
     customerCompany: fd(formData, "customerCompany"),
     customerName: fd(formData, "customerName"),
-    endUser: fd(formData, "endUser"),
-    projectName: fd(formData, "projectName"),
+    shipToName: fd(formData, "shipToName"),
+    shipToContact: fd(formData, "shipToContact"),
+    shipToPhone: fd(formData, "shipToPhone"),
+    shipToPostal: fd(formData, "shipToPostal"),
+    shipToAddress: fd(formData, "shipToAddress"),
     startDate: fd(formData, "startDate"),
     endDate: fd(formData, "endDate"),
+    plannedShipDate: fd(formData, "plannedShipDate"),
     pickupLocationId: fd(formData, "pickupLocationId"),
     returnLocationId: fd(formData, "returnLocationId"),
     notes: fd(formData, "notes"),
@@ -72,14 +78,21 @@ export async function createReservation(
       requestedById: d.requestedById,
       customerCompany: d.customerCompany,
       customerName: d.customerName || null,
-      endUser: d.endUser || null,
-      projectName: d.projectName,
+      shipToName: d.shipToName || null,
+      shipToContact: d.shipToContact || null,
+      shipToPhone: d.shipToPhone || null,
+      shipToPostal: d.shipToPostal || null,
+      shipToAddress: d.shipToAddress || null,
       startDate: new Date(d.startDate),
       endDate: new Date(d.endDate),
+      plannedShipDate: d.plannedShipDate
+        ? new Date(d.plannedShipDate)
+        : defaultPlannedShipDate(parseYmd(d.startDate)),
       pickupLocationId: d.pickupLocationId,
       returnLocationId: d.returnLocationId,
       notes: d.notes || null,
-      status: RESV_STATUS.REQUESTED,
+      // 申請中は廃止。登録＝即確定。
+      status: RESV_STATUS.CONFIRMED,
     },
   });
   await recomputeUnitStatus(d.demoUnitId);
@@ -94,19 +107,104 @@ async function loadReservation(id: string) {
   return r;
 }
 
-export async function confirmReservation(formData: FormData): Promise<void> {
+export async function updateReservation(
+  id: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   await assertRole("STAFF");
-  const id = fd(formData, "id");
-  const r = await loadReservation(id);
-  if (r.status !== RESV_STATUS.REQUESTED) throw new Error("確定できる状態ではありません");
+
+  const existing = await prisma.reservation.findUnique({ where: { id } });
+  if (!existing) return { error: "予約が見つかりません" };
+  if (
+    ([RESV_STATUS.RETURNED, RESV_STATUS.CANCELLED] as string[]).includes(
+      existing.status,
+    )
+  ) {
+    return { error: "返却済み・キャンセル済みの予約は編集できません" };
+  }
+
+  const parsed = reservationEditSchema.safeParse({
+    requestedById: fd(formData, "requestedById"),
+    customerCompany: fd(formData, "customerCompany"),
+    customerName: fd(formData, "customerName"),
+    shipToName: fd(formData, "shipToName"),
+    shipToContact: fd(formData, "shipToContact"),
+    shipToPhone: fd(formData, "shipToPhone"),
+    shipToPostal: fd(formData, "shipToPostal"),
+    shipToAddress: fd(formData, "shipToAddress"),
+    startDate: fd(formData, "startDate"),
+    endDate: fd(formData, "endDate"),
+    plannedShipDate: fd(formData, "plannedShipDate"),
+    pickupLocationId: fd(formData, "pickupLocationId"),
+    returnLocationId: fd(formData, "returnLocationId"),
+    notes: fd(formData, "notes"),
+  });
+  if (!parsed.success) {
+    return {
+      error: "入力内容を確認してください",
+      fieldErrors: zodFieldErrors(parsed.error),
+    };
+  }
+  const d = parsed.data;
+
+  // 期間を変えた場合は、自分自身を除いてダブルブッキングを再チェック
+  const available = await isUnitAvailable(
+    existing.demoUnitId,
+    d.startDate,
+    d.endDate,
+    id,
+  );
+  if (!available) {
+    const { reservations, maintenance } = await getConflicts(
+      existing.demoUnitId,
+      d.startDate,
+      d.endDate,
+      id,
+    );
+    const parts = [
+      ...reservations.map(
+        (x) =>
+          `予約: ${fmtDate(x.startDate)}〜${fmtDate(x.endDate)}（${x.customerCompany}）`,
+      ),
+      ...maintenance.map(
+        (m) =>
+          `点検/修理: ${fmtDate(m.startDate)}〜${m.endDate ? fmtDate(m.endDate) : "継続中"}`,
+      ),
+    ];
+    return {
+      error: `この期間は他の予約・点検と重複しています。${parts.join(" / ") || "期間を見直してください。"}`,
+      fieldErrors: { endDate: "別の期間にしてください" },
+    };
+  }
 
   await prisma.reservation.update({
     where: { id },
-    data: { status: RESV_STATUS.CONFIRMED },
+    data: {
+      requestedById: d.requestedById,
+      customerCompany: d.customerCompany,
+      customerName: d.customerName || null,
+      shipToName: d.shipToName || null,
+      shipToContact: d.shipToContact || null,
+      shipToPhone: d.shipToPhone || null,
+      shipToPostal: d.shipToPostal || null,
+      shipToAddress: d.shipToAddress || null,
+      startDate: new Date(d.startDate),
+      endDate: new Date(d.endDate),
+      plannedShipDate: d.plannedShipDate
+        ? new Date(d.plannedShipDate)
+        : defaultPlannedShipDate(parseYmd(d.startDate)),
+      pickupLocationId: d.pickupLocationId,
+      returnLocationId: d.returnLocationId,
+      notes: d.notes || null,
+    },
   });
-  await recomputeUnitStatus(r.demoUnitId);
+  await recomputeUnitStatus(existing.demoUnitId);
   revalidatePath(`/reservations/${id}`);
   revalidatePath("/reservations");
+  revalidatePath("/schedule");
+  revalidatePath("/");
+  redirect(`/reservations/${id}`);
 }
 
 export async function checkoutReservation(
@@ -117,8 +215,11 @@ export async function checkoutReservation(
   const id = fd(formData, "id");
   const parsed = checkoutSchema.safeParse({
     note: fd(formData, "note"),
+    carrier: fd(formData, "carrier"),
     shippingTrackingNo: fd(formData, "shippingTrackingNo"),
     shipDate: fd(formData, "shipDate"),
+    desiredArrivalDate: fd(formData, "desiredArrivalDate"),
+    desiredArrivalTime: fd(formData, "desiredArrivalTime"),
     partsChecked: fd(formData, "partsChecked"),
     maintenanceChecked: fd(formData, "maintenanceChecked"),
     inverterChecked: fd(formData, "inverterChecked"),
@@ -129,11 +230,7 @@ export async function checkoutReservation(
   const c = parsed.data;
 
   const r = await loadReservation(id);
-  if (
-    !([RESV_STATUS.REQUESTED, RESV_STATUS.CONFIRMED] as string[]).includes(
-      r.status,
-    )
-  ) {
+  if (r.status !== RESV_STATUS.CONFIRMED) {
     return { error: "出庫できる状態ではありません" };
   }
 
@@ -156,8 +253,13 @@ export async function checkoutReservation(
       pickedUpAt: new Date(),
       pickedUpById: user.id,
       checkoutNote: c.note || null,
+      carrier: c.carrier || null,
       shippingTrackingNo: c.shippingTrackingNo || null,
       shipDate: c.shipDate ? new Date(c.shipDate) : new Date(),
+      desiredArrivalDate: c.desiredArrivalDate
+        ? new Date(c.desiredArrivalDate)
+        : null,
+      desiredArrivalTime: c.desiredArrivalTime || "AM",
       partsChecked: true,
       maintenanceChecked: true,
       inverterChecked: true,

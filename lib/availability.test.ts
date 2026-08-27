@@ -82,7 +82,6 @@ describe("isUnitAvailable / getConflicts (DB)", () => {
         demoUnitId: unit.id,
         requestedById: user.id,
         customerCompany: "テスト商事",
-        projectName: "重複テスト",
         startDate: new Date("2026-03-10"),
         endDate: new Date("2026-03-20"),
         pickupLocationId: loc.id,

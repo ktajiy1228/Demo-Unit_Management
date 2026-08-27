@@ -40,6 +40,7 @@ export default async function UnitsPage({ searchParams }: { searchParams: SP }) 
                 { name: { contains: sp.q } },
                 { assetNo: { contains: sp.q } },
                 { modelNumber: { contains: sp.q } },
+                { serialNumber: { contains: sp.q } },
                 { maker: { contains: sp.q } },
               ],
             }
@@ -127,6 +128,7 @@ export default async function UnitsPage({ searchParams }: { searchParams: SP }) 
               <tr>
                 <Th>管理番号</Th>
                 <Th>名称 / 型番</Th>
+                <Th>シリアル№</Th>
                 <Th>カテゴリ</Th>
                 <Th>配置拠点</Th>
                 <Th>状態</Th>
@@ -143,6 +145,9 @@ export default async function UnitsPage({ searchParams }: { searchParams: SP }) 
                   <Td>
                     <div className="font-medium text-slate-900">{u.name}</div>
                     <div className="text-xs text-slate-500">{u.modelNumber}</div>
+                  </Td>
+                  <Td className="tabular whitespace-nowrap text-slate-600">
+                    {u.serialNumber ?? "-"}
                   </Td>
                   <Td>{u.category.name}</Td>
                   <Td>{u.homeLocation.name}</Td>

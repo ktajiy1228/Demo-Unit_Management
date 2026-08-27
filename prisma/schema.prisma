@@ -85,10 +85,17 @@ model Reservation {
   id              String   @id @default(cuid())
   customerCompany String
   customerName    String?
-  endUser         String?  // 納入先（エンドユーザー）
-  projectName     String
+
+  // 送付先（デモ機の配送先）
+  shipToName     String? // 送付先名称（現場名・会社名）
+  shipToContact  String? // 送付先の担当者
+  shipToPhone    String? // 送付先の電話番号
+  shipToPostal   String? // 郵便番号
+  shipToAddress  String? // 住所
+
   startDate       DateTime // 予約枠の開始
   endDate         DateTime // 予約枠の終了（返却予定）
+  plannedShipDate DateTime? // 出荷予定日（既定: 貸出開始2営業日前）
   shipDate        DateTime? // 実際の出荷日
   status          String   @default("REQUESTED")
   notes           String?
@@ -96,7 +103,10 @@ model Reservation {
   // 出庫（チェックアウト）
   pickedUpAt         DateTime?
   checkoutNote       String?
+  carrier            String?  // 運送会社名
   shippingTrackingNo String?  // 送り状No.
+  desiredArrivalDate DateTime? // 着指定日
+  desiredArrivalTime String?  // 時間指定（AM 既定・テキスト）
   partsChecked       Boolean  @default(false) // 同梱部品（ネジ等）確認
   maintenanceChecked Boolean  @default(false) // 整備完了確認
   inverterChecked    Boolean  @default(false) // インバーター確認

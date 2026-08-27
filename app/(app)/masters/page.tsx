@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
 import { Card, PageHeader, Table, Td, Th } from "@/components/ui";
-import { ROLE_LABEL } from "@/lib/constants";
 import { AddCategoryForm, AddLocationForm, AddUserForm } from "./MasterForms";
-import { deleteCategory, toggleUserActive } from "./actions";
+import { UserRow } from "./UserRow";
+import { deleteCategory } from "./actions";
 
 export const metadata = { title: "マスタ管理 | デモ機運用管理" };
 
@@ -108,24 +108,19 @@ export default async function MastersPage() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className={u.active ? "" : "text-slate-400"}>
-                  <Td>{u.name}</Td>
-                  <Td className="text-slate-500">{u.email}</Td>
-                  <Td>{ROLE_LABEL[u.role] ?? u.role}</Td>
-                  <Td>{u.location.name}</Td>
-                  <Td>{u.active ? "有効" : "無効"}</Td>
-                  <Td>
-                    <form action={toggleUserActive}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <button
-                        type="submit"
-                        className="text-xs text-slate-600 underline hover:text-slate-900"
-                      >
-                        {u.active ? "無効化" : "有効化"}
-                      </button>
-                    </form>
-                  </Td>
-                </tr>
+                <UserRow
+                  key={u.id}
+                  user={{
+                    id: u.id,
+                    name: u.name,
+                    email: u.email,
+                    role: u.role,
+                    active: u.active,
+                    locationId: u.locationId,
+                    location: { name: u.location.name },
+                  }}
+                  locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+                />
               ))}
             </tbody>
           </Table>
