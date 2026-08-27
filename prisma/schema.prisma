@@ -1,13 +1,13 @@
 // 照明器具デモ機 運用管理アプリ — Prisma スキーマ
-// プロトタイプは SQLite。Postgres へ移行する場合は datasource の provider と
-// url を差し替える（enum 未使用なので String のまま移行可能）。
+// 本番は Postgres（Vercel Postgres / Neon）。ローカルは同じ Postgres URL を
+// DATABASE_URL に設定する（enum 未使用なので型はそのまま移行可能）。
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
