@@ -4,11 +4,17 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/rbac";
 import { Button, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
-import { RESV_STATUS } from "@/lib/constants";
+import { RESV_STATUS, RU_STATUS } from "@/lib/constants";
 import { fmtDate, fmtDateW } from "@/lib/format";
 import { logout } from "./actions";
 
 export const metadata = { title: "ダッシュボード | デモ機運用管理" };
+
+// 「他○件」表示用: アクティブな子デモ機だけを数える。
+const RESV_CHILD_COUNT = {
+  where: { status: RU_STATUS.ACTIVE },
+  select: { id: true },
+} as const;
 
 function ResvLine({
   r,
@@ -20,6 +26,7 @@ function ResvLine({
     endDate: Date;
     status: string;
     demoUnit: { name: string; assetNo: string };
+    childUnits: { id: string }[];
   };
 }) {
   return (
@@ -28,6 +35,11 @@ function ResvLine({
         <Link href={`/reservations/${r.id}`} className="font-medium underline">
           {r.demoUnit.name}
         </Link>
+        {r.childUnits.length > 0 && (
+          <span className="ml-1 text-xs text-slate-400">
+            他{r.childUnits.length}件
+          </span>
+        )}
         <span className="tabular ml-1 text-xs text-slate-400">
           {r.demoUnit.assetNo}
         </span>
@@ -66,7 +78,7 @@ export default async function DashboardPage() {
           status: RESV_STATUS.CONFIRMED,
           plannedShipDate: { gte: todayStart, lt: tomorrowStart },
         },
-        include: { demoUnit: true },
+        include: { demoUnit: true, childUnits: RESV_CHILD_COUNT },
         orderBy: { plannedShipDate: "asc" },
       }),
       prisma.reservation.findMany({
@@ -74,7 +86,7 @@ export default async function DashboardPage() {
           status: RESV_STATUS.PICKED_UP,
           endDate: { gte: todayStart, lt: tomorrowStart },
         },
-        include: { demoUnit: true },
+        include: { demoUnit: true, childUnits: RESV_CHILD_COUNT },
         orderBy: { endDate: "asc" },
       }),
       prisma.reservation.findMany({
@@ -82,7 +94,7 @@ export default async function DashboardPage() {
           status: RESV_STATUS.CONFIRMED,
           plannedShipDate: { gte: tomorrowStart, lt: dayAfterTomorrowStart },
         },
-        include: { demoUnit: true },
+        include: { demoUnit: true, childUnits: RESV_CHILD_COUNT },
         orderBy: { plannedShipDate: "asc" },
       }),
       prisma.reservation.findMany({
@@ -90,7 +102,7 @@ export default async function DashboardPage() {
           status: RESV_STATUS.PICKED_UP,
           endDate: { gte: tomorrowStart, lt: dayAfterTomorrowStart },
         },
-        include: { demoUnit: true },
+        include: { demoUnit: true, childUnits: RESV_CHILD_COUNT },
         orderBy: { endDate: "asc" },
       }),
       prisma.reservation.findMany({
@@ -98,7 +110,7 @@ export default async function DashboardPage() {
           status: RESV_STATUS.PICKED_UP,
           endDate: { lt: todayStart },
         },
-        include: { demoUnit: true },
+        include: { demoUnit: true, childUnits: RESV_CHILD_COUNT },
         orderBy: { endDate: "asc" },
       }),
       prisma.maintenanceRecord.findMany({

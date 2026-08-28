@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui";
 import { toDateInput } from "@/lib/format";
+import { RU_STATUS } from "@/lib/constants";
 import { ReservationEditForm } from "../ReservationEditForm";
 import { updateReservation } from "../../actions";
 
@@ -19,7 +20,14 @@ export default async function EditReservationPage({
   const [reservation, users, locations] = await Promise.all([
     prisma.reservation.findUnique({
       where: { id },
-      include: { demoUnit: true },
+      include: {
+        demoUnit: true,
+        childUnits: {
+          where: { status: RU_STATUS.ACTIVE },
+          include: { demoUnit: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     }),
     prisma.user.findMany({
       where: { active: true },
@@ -49,7 +57,13 @@ export default async function EditReservationPage({
         action={updateReservation.bind(null, id)}
         users={users}
         locations={locations}
-        unitLabel={`${reservation.demoUnit.name}（${reservation.demoUnit.assetNo} / ${reservation.demoUnit.modelNumber}）`}
+        unitLabels={[
+          `${reservation.demoUnit.name}（${reservation.demoUnit.assetNo} / ${reservation.demoUnit.modelNumber}）`,
+          ...reservation.childUnits.map(
+            (cu) =>
+              `${cu.demoUnit.name}（${cu.demoUnit.assetNo} / ${cu.demoUnit.modelNumber}）`,
+          ),
+        ]}
         defaults={{
           startDate: toDateInput(reservation.startDate),
           endDate: toDateInput(reservation.endDate),

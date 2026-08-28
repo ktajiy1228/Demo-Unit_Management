@@ -7,7 +7,7 @@ import {
   ScheduleTimeline,
   type TimelineUnit,
 } from "@/components/ScheduleTimeline";
-import { ACTIVE_RESV_STATUSES, UNIT_STATUS } from "@/lib/constants";
+import { ACTIVE_RESV_STATUSES, RU_STATUS, UNIT_STATUS } from "@/lib/constants";
 import { toDateInput } from "@/lib/format";
 
 export const metadata = { title: "予約カレンダー | デモ機運用管理" };
@@ -51,6 +51,18 @@ export default async function SchedulePage({
             endDate: { gte: rangeStart },
           },
         },
+        // 子デモ機として押さえられている予約（キャンセル済みの子は除外）
+        reservationUnits: {
+          where: {
+            status: RU_STATUS.ACTIVE,
+            reservation: {
+              status: { in: ACTIVE_RESV_STATUSES },
+              startDate: { lte: rangeEnd },
+              endDate: { gte: rangeStart },
+            },
+          },
+          include: { reservation: true },
+        },
         maintenance: {
           where: {
             startDate: { lte: rangeEnd },
@@ -73,6 +85,14 @@ export default async function SchedulePage({
         status: r.status,
         start: r.startDate,
         end: r.endDate,
+      })),
+      ...u.reservationUnits.map((ru) => ({
+        id: ru.reservation.id,
+        kind: "reservation" as const,
+        label: ru.reservation.customerCompany,
+        status: ru.reservation.status,
+        start: ru.reservation.startDate,
+        end: ru.reservation.endDate,
       })),
       ...u.maintenance.map((m) => ({
         id: m.id,

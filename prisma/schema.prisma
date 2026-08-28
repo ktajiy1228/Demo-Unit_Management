@@ -72,8 +72,9 @@ model DemoUnit {
   homeLocationId String
   homeLocation   Location @relation("HomeLocation", fields: [homeLocationId], references: [id])
 
-  reservations Reservation[]
-  maintenance  MaintenanceRecord[]
+  reservations     Reservation[]
+  reservationUnits ReservationUnit[]
+  maintenance      MaintenanceRecord[]
 
   @@index([status])
   @@index([categoryId])
@@ -118,8 +119,11 @@ model Reservation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // 主デモ機（案件に必ず1台）。子デモ機は ReservationUnit で 0〜2 台。
   demoUnitId String
   demoUnit   DemoUnit @relation(fields: [demoUnitId], references: [id])
+
+  childUnits ReservationUnit[]
 
   requestedById String
   requestedBy   User   @relation("RequestedBy", fields: [requestedById], references: [id])
@@ -138,6 +142,24 @@ model Reservation {
 
   @@index([demoUnitId, startDate, endDate])
   @@index([status])
+}
+
+// 予約に紐づく子デモ機。主デモ機は Reservation.demoUnitId 側。
+// status: ACTIVE | CANCELLED（子のみ個別キャンセル可。キャンセル済みは集計・表示から除外）
+model ReservationUnit {
+  id            String    @id @default(cuid())
+  status        String    @default("ACTIVE")
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  demoUnitId String
+  demoUnit   DemoUnit @relation(fields: [demoUnitId], references: [id])
+
+  @@unique([reservationId, demoUnitId])
+  @@index([demoUnitId, status])
 }
 
 // 点検・修理。type: INSPECTION | REPAIR

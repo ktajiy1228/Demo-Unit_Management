@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RESV_STATUS, ROLE, UNIT_STATUS } from "@/lib/constants";
+import { MAX_CHILD_UNITS, RESV_STATUS, ROLE, UNIT_STATUS } from "@/lib/constants";
 
 const dateString = z
   .string()
@@ -29,7 +29,11 @@ export const unitSchema = z.object({
 export type UnitInput = z.infer<typeof unitSchema>;
 
 const reservationFields = z.object({
-  demoUnitId: z.string().min(1, "デモ機を選択してください"),
+  primaryDemoUnitId: z.string().min(1, "主デモ機を選択してください"),
+  childDemoUnitIds: z
+    .array(z.string().min(1))
+    .max(MAX_CHILD_UNITS, `子デモ機は${MAX_CHILD_UNITS}台までです`)
+    .default([]),
   requestedById: z.string().min(1, "担当営業を選択してください"),
   customerCompany: z.string().trim().min(1, "顧客会社名は必須です").max(160),
   customerName: z.string().trim().max(120).optional().or(z.literal("")),
@@ -53,15 +57,21 @@ const endAfterStartMsg = {
   path: ["endDate"],
 };
 
-export const reservationSchema = reservationFields.refine(
-  endAfterStart,
-  endAfterStartMsg,
-);
+export const reservationSchema = reservationFields
+  .refine(endAfterStart, endAfterStartMsg)
+  .refine((v) => !v.childDemoUnitIds.includes(v.primaryDemoUnitId), {
+    message: "主デモ機は子デモ機に選べません",
+    path: ["childDemoUnitIds"],
+  })
+  .refine(
+    (v) => new Set(v.childDemoUnitIds).size === v.childDemoUnitIds.length,
+    { message: "子デモ機が重複しています", path: ["childDemoUnitIds"] },
+  );
 export type ReservationInput = z.infer<typeof reservationSchema>;
 
-// 予約編集ではデモ機（機種）は変更させない。
+// 予約編集ではデモ機（主・子）の構成は変更させない。
 export const reservationEditSchema = reservationFields
-  .omit({ demoUnitId: true })
+  .omit({ primaryDemoUnitId: true, childDemoUnitIds: true })
   .refine(endAfterStart, endAfterStartMsg);
 export type ReservationEditInput = z.infer<typeof reservationEditSchema>;
 

@@ -1,10 +1,25 @@
 import { startOfDay } from "date-fns";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   ACTIVE_RESV_STATUSES,
   RESV_STATUS,
+  RU_STATUS,
   UNIT_STATUS,
 } from "@/lib/constants";
+
+/**
+ * その予約が対象デモ機を押さえているか、の絞り込み条件。
+ * 主デモ機（Reservation.demoUnitId）either アクティブな子デモ機（ReservationUnit）。
+ */
+function occupiesUnit(unitId: string): Prisma.ReservationWhereInput {
+  return {
+    OR: [
+      { demoUnitId: unitId },
+      { childUnits: { some: { demoUnitId: unitId, status: RU_STATUS.ACTIVE } } },
+    ],
+  };
+}
 
 /**
  * 期間 [aStart, aEnd] と [bStart, bEnd] が（日単位で）重なるか。
@@ -52,7 +67,7 @@ export async function getConflicts(
 
   const reservations = await prisma.reservation.findMany({
     where: {
-      demoUnitId: unitId,
+      ...occupiesUnit(unitId),
       status: { in: ACTIVE_RESV_STATUSES },
       startDate: { lte: e },
       endDate: { gte: s },
@@ -150,6 +165,25 @@ export async function findAvailableUnits(opts: {
 }
 
 /**
+ * 予約が現在押さえているデモ機の id 一覧（主 + アクティブな子）。
+ * 出庫 / 返却 / 期間変更 / キャンセルの後に、この全 id で recomputeUnitStatus する。
+ */
+export async function activeUnitIdsOf(reservationId: string): Promise<string[]> {
+  const r = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    select: {
+      demoUnitId: true,
+      childUnits: {
+        where: { status: RU_STATUS.ACTIVE },
+        select: { demoUnitId: true },
+      },
+    },
+  });
+  if (!r) return [];
+  return [r.demoUnitId, ...r.childUnits.map((c) => c.demoUnitId)];
+}
+
+/**
  * 当日基準でデモ機の status を再計算して保存する。
  * 予約作成 / 出庫 / 返却 / 点検登録の後に呼ぶ。
  */
@@ -178,7 +212,7 @@ export async function recomputeUnitStatus(unitId: string): Promise<string> {
   } else {
     const loanedNow = await prisma.reservation.findFirst({
       where: {
-        demoUnitId: unitId,
+        ...occupiesUnit(unitId),
         status: RESV_STATUS.PICKED_UP,
       },
       select: { id: true },
@@ -188,7 +222,7 @@ export async function recomputeUnitStatus(unitId: string): Promise<string> {
     } else {
       const upcoming = await prisma.reservation.findFirst({
         where: {
-          demoUnitId: unitId,
+          ...occupiesUnit(unitId),
           status: RESV_STATUS.CONFIRMED,
           endDate: { gte: now },
         },
