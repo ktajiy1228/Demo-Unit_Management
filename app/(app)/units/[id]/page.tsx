@@ -12,7 +12,7 @@ import {
   Th,
 } from "@/components/ui";
 import { ResvStatusBadge, UnitStatusBadge, OverdueBadge } from "@/components/StatusBadge";
-import { MAINT_TYPE_LABEL, ACTIVE_RESV_STATUSES } from "@/lib/constants";
+import { MAINT_TYPE_LABEL, ACTIVE_RESV_STATUSES, RU_STATUS } from "@/lib/constants";
 import { fmtDate, fmtDateW, isOverdue } from "@/lib/format";
 import { MaintenancePanel } from "./MaintenancePanel";
 import { closeMaintenance } from "../actions";
@@ -44,6 +44,18 @@ export default async function UnitDetailPage({
         include: { requestedBy: true, pickupLocation: true, returnLocation: true },
         orderBy: { startDate: "desc" },
       },
+      reservationUnits: {
+        where: { status: RU_STATUS.ACTIVE },
+        include: {
+          reservation: {
+            include: {
+              requestedBy: true,
+              pickupLocation: true,
+              returnLocation: true,
+            },
+          },
+        },
+      },
       maintenance: {
         include: { createdBy: true },
         orderBy: { startDate: "desc" },
@@ -52,11 +64,17 @@ export default async function UnitDetailPage({
   });
   if (!unit) notFound();
 
-  const upcoming = unit.reservations.filter(
-    (r) => ACTIVE_RESV_STATUSES.includes(r.status),
+  // このデモ機が関わる予約 = 主として（reservations）＋ 子として（reservationUnits）。
+  const linkedReservations = [
+    ...unit.reservations.map((r) => ({ r, role: "主" as const })),
+    ...unit.reservationUnits.map((ru) => ({ r: ru.reservation, role: "子" as const })),
+  ].sort((a, b) => b.r.startDate.getTime() - a.r.startDate.getTime());
+
+  const upcoming = linkedReservations.filter(({ r }) =>
+    ACTIVE_RESV_STATUSES.includes(r.status),
   );
-  const history = unit.reservations.filter(
-    (r) => !ACTIVE_RESV_STATUSES.includes(r.status),
+  const history = linkedReservations.filter(
+    ({ r }) => !ACTIVE_RESV_STATUSES.includes(r.status),
   );
 
   return (
@@ -123,15 +141,22 @@ export default async function UnitDetailPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {upcoming.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50">
+                  {upcoming.map(({ r, role }) => (
+                    <tr key={`${role}-${r.id}`} className="hover:bg-slate-50">
                       <Td className="tabular whitespace-nowrap">
                         <Link href={`/reservations/${r.id}`} className="underline">
                           {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
                         </Link>
                       </Td>
                       <Td>
-                        <div>{r.customerCompany}</div>
+                        <div>
+                          {r.customerCompany}
+                          {role === "子" && (
+                            <span className="ml-1 text-xs text-slate-400">
+                              （子機）
+                            </span>
+                          )}
+                        </div>
                       </Td>
                       <Td>{r.requestedBy.name}</Td>
                       <Td className="whitespace-nowrap">
@@ -163,15 +188,22 @@ export default async function UnitDetailPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50">
+                  {history.map(({ r, role }) => (
+                    <tr key={`${role}-${r.id}`} className="hover:bg-slate-50">
                       <Td className="tabular whitespace-nowrap">
                         <Link href={`/reservations/${r.id}`} className="underline">
                           {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}
                         </Link>
                       </Td>
                       <Td>
-                        <div>{r.customerCompany}</div>
+                        <div>
+                          {r.customerCompany}
+                          {role === "子" && (
+                            <span className="ml-1 text-xs text-slate-400">
+                              （子機）
+                            </span>
+                          )}
+                        </div>
                       </Td>
                       <Td>
                         <ResvStatusBadge status={r.status} />

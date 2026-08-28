@@ -13,6 +13,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { FormState } from "@/lib/form";
+import { MAX_CHILD_UNITS } from "@/lib/constants";
 import { defaultPlannedShipDate, formatYmd, parseYmd } from "@/lib/business-days";
 
 type Option = { id: string; name: string };
@@ -70,12 +71,13 @@ export function ReservationForm({
   const [units, setUnits] = useState<UnitOption[]>(
     defaultUnit ? [defaultUnit] : [],
   );
-  const [selectedUnit, setSelectedUnit] = useState(defaultUnit?.id ?? "");
+  const [primaryUnit, setPrimaryUnit] = useState(defaultUnit?.id ?? "");
+  const [childUnits, setChildUnits] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [searched, setSearched] = useState(Boolean(defaultUnit));
 
-  // 発送拠点・返却拠点の既定は選択したデモ機の配置拠点。
+  // 発送拠点・返却拠点の既定は主デモ機の配置拠点。
   const [pickupLocationId, setPickupLocationId] = useState(
     defaultUnit?.locationId ?? "",
   );
@@ -83,11 +85,38 @@ export function ReservationForm({
     defaultUnit?.locationId ?? "",
   );
 
-  function selectUnit(id: string) {
-    setSelectedUnit(id);
-    const homeLocationId = units.find((u) => u.id === id)?.locationId ?? "";
+  // 主デモ機の配置拠点。子は同一拠点のみ選択可。
+  const primaryLocationId =
+    units.find((u) => u.id === primaryUnit)?.locationId ??
+    defaultUnit?.locationId ??
+    "";
+
+  function selectPrimary(id: string) {
+    setPrimaryUnit(id);
+    // 主に選んだ機器は子から外す。
+    setChildUnits((prev) => prev.filter((c) => c !== id));
+    const unit = units.find((u) => u.id === id);
+    const homeLocationId = unit?.locationId ?? "";
     setPickupLocationId(homeLocationId);
     setReturnLocationId(homeLocationId);
+    // 検索を主デモ機と同一拠点にロック。
+    if (homeLocationId) setFilterLocation(homeLocationId);
+    // 拠点が変わったら、別拠点になった子を落とす。
+    setChildUnits((prev) =>
+      prev.filter(
+        (c) => units.find((u) => u.id === c)?.locationId === homeLocationId,
+      ),
+    );
+  }
+
+  function toggleChild(id: string) {
+    setChildUnits((prev) =>
+      prev.includes(id)
+        ? prev.filter((c) => c !== id)
+        : prev.length >= MAX_CHILD_UNITS
+          ? prev
+          : [...prev, id],
+    );
   }
 
   const search = useCallback(async () => {
@@ -110,18 +139,23 @@ export function ReservationForm({
       const list: UnitOption[] = data.units ?? [];
       setUnits(list);
       setSearched(true);
-      if (!list.some((u) => u.id === selectedUnit)) {
-        setSelectedUnit("");
+      // 検索結果から外れた選択を整理する。
+      if (!list.some((u) => u.id === primaryUnit)) {
+        setPrimaryUnit("");
         setPickupLocationId("");
         setReturnLocationId("");
       }
+      setChildUnits((prev) => prev.filter((c) => list.some((u) => u.id === c)));
       if (list.length === 0) setSearchMsg("この期間に空いているデモ機はありません。");
     } catch {
       setSearchMsg("検索に失敗しました。");
     } finally {
       setSearching(false);
     }
-  }, [startDate, endDate, filterCategory, filterLocation, selectedUnit]);
+  }, [startDate, endDate, filterCategory, filterLocation, primaryUnit]);
+
+  const primary = units.find((u) => u.id === primaryUnit);
+  const childCount = childUnits.length;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -171,11 +205,16 @@ export function ReservationForm({
               ))}
             </Select>
           </Field>
-          <Field label="配置拠点で絞る" htmlFor="filterLocation">
+          <Field
+            label="配置拠点で絞る"
+            htmlFor="filterLocation"
+            hint={primaryUnit ? "主デモ機の拠点に固定中" : undefined}
+          >
             <Select
               id="filterLocation"
               value={filterLocation}
               onChange={(e) => setFilterLocation(e.target.value)}
+              disabled={Boolean(primaryUnit)}
             >
               <option value="">指定なし</option>
               {locations.map((l) => (
@@ -199,30 +238,67 @@ export function ReservationForm({
         )}
 
         {searched && units.length > 0 && (
-          <ul className="mt-3 divide-y divide-slate-100 rounded-md border border-slate-200">
-            {units.map((u) => (
-              <li key={u.id}>
-                <label className="flex cursor-pointer items-start gap-3 p-3 hover:bg-slate-50">
-                  <input
-                    type="radio"
-                    name="unitPick"
-                    className="mt-1"
-                    checked={selectedUnit === u.id}
-                    onChange={() => selectUnit(u.id)}
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium text-slate-900">{u.name}</span>
-                    <span className="tabular ml-2 text-xs text-slate-500">
-                      {u.assetNo} / {u.modelNumber}
-                    </span>
-                    <span className="block text-xs text-slate-500">
-                      {u.categoryName}・{u.locationName}
-                    </span>
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="mt-3 text-xs text-slate-500">
+              主デモ機を1台、子デモ機を{MAX_CHILD_UNITS}台まで選べます（合計
+              {MAX_CHILD_UNITS + 1}台）。子は主と同じ配置拠点のみ。
+            </p>
+            <ul className="mt-2 divide-y divide-slate-100 rounded-md border border-slate-200">
+              {units.map((u) => {
+                const isPrimary = primaryUnit === u.id;
+                const isChild = childUnits.includes(u.id);
+                const sameLocation =
+                  !primaryUnit || u.locationId === primaryLocationId;
+                const childDisabled =
+                  isPrimary ||
+                  !primaryUnit ||
+                  !sameLocation ||
+                  (!isChild && childCount >= MAX_CHILD_UNITS);
+                return (
+                  <li key={u.id} className="p-3 hover:bg-slate-50">
+                    <div className="flex items-start gap-3">
+                      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+                        <input
+                          type="radio"
+                          name="primaryPick"
+                          checked={isPrimary}
+                          onChange={() => selectPrimary(u.id)}
+                        />
+                        主
+                      </label>
+                      <label
+                        className={`flex items-center gap-1.5 text-xs ${
+                          childDisabled
+                            ? "cursor-not-allowed text-slate-300"
+                            : "cursor-pointer text-slate-600"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          name="childPick"
+                          checked={isChild}
+                          disabled={childDisabled}
+                          onChange={() => toggleChild(u.id)}
+                        />
+                        子
+                      </label>
+                      <span className="text-sm">
+                        <span className="font-medium text-slate-900">
+                          {u.name}
+                        </span>
+                        <span className="tabular ml-2 text-xs text-slate-500">
+                          {u.assetNo} / {u.modelNumber}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {u.categoryName}・{u.locationName}
+                        </span>
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </Card>
 
@@ -231,28 +307,44 @@ export function ReservationForm({
         <form action={formAction} className="space-y-3">
           {state.error && <Alert tone="error">{state.error}</Alert>}
 
-          <input type="hidden" name="demoUnitId" value={selectedUnit} />
+          <input type="hidden" name="primaryDemoUnitId" value={primaryUnit} />
+          {childUnits.map((id) => (
+            <input key={id} type="hidden" name="childDemoUnitIds" value={id} />
+          ))}
           <input type="hidden" name="startDate" value={startDate} />
           <input type="hidden" name="endDate" value={endDate} />
 
           <div className="rounded-md bg-slate-50 p-3 text-sm">
-            {selectedUnit ? (
+            {primary ? (
               <>
-                <span className="text-slate-500">選択中のデモ機: </span>
-                <span className="font-medium">
-                  {units.find((u) => u.id === selectedUnit)?.name}
-                </span>
-                <span className="ml-2 text-xs text-slate-500">
-                  {startDate || "?"} 〜 {endDate || "?"}
-                </span>
+                <div>
+                  <span className="text-slate-500">主デモ機: </span>
+                  <span className="font-medium">{primary.name}</span>
+                  <span className="ml-2 text-xs text-slate-500">
+                    {startDate || "?"} 〜 {endDate || "?"}
+                  </span>
+                </div>
+                {childCount > 0 && (
+                  <div className="mt-1">
+                    <span className="text-slate-500">子デモ機（{childCount}）: </span>
+                    <span className="font-medium">
+                      {childUnits
+                        .map((id) => units.find((u) => u.id === id)?.name ?? id)
+                        .join("、")}
+                    </span>
+                  </div>
+                )}
               </>
             ) : (
               <span className="text-slate-500">
-                左で期間を検索し、デモ機を1台選んでください。
+                左で期間を検索し、主デモ機を選んでください。
               </span>
             )}
-            {fe.demoUnitId && (
-              <p className="mt-1 text-xs text-red-600">{fe.demoUnitId}</p>
+            {fe.primaryDemoUnitId && (
+              <p className="mt-1 text-xs text-red-600">{fe.primaryDemoUnitId}</p>
+            )}
+            {fe.childDemoUnitIds && (
+              <p className="mt-1 text-xs text-red-600">{fe.childDemoUnitIds}</p>
             )}
           </div>
 
@@ -387,7 +479,7 @@ export function ReservationForm({
           </Field>
 
           <div className="flex gap-2 pt-1">
-            <SubmitButton disabled={!selectedUnit} />
+            <SubmitButton disabled={!primaryUnit} />
             <Link
               href="/reservations"
               className="inline-flex items-center rounded-md px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-100"

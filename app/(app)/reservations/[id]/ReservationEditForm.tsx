@@ -48,14 +48,14 @@ export function ReservationEditForm({
   action,
   users,
   locations,
-  unitLabel,
+  unitLabels,
   defaults,
 }: {
   id: string;
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   users: Option[];
   locations: Option[];
-  unitLabel: string;
+  unitLabels: string[];
   defaults: ReservationEditDefaults;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {});
@@ -81,9 +81,19 @@ export function ReservationEditForm({
 
         <div className="rounded-md bg-slate-50 p-3 text-sm">
           <span className="text-slate-500">デモ機: </span>
-          <span className="font-medium">{unitLabel}</span>
+          {unitLabels.length === 1 ? (
+            <span className="font-medium">{unitLabels[0]}</span>
+          ) : (
+            <ul className="mt-1 list-disc pl-5">
+              {unitLabels.map((label, i) => (
+                <li key={i} className="font-medium">
+                  {i === 0 ? `主: ${label}` : `子: ${label}`}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="mt-1 text-xs text-slate-500">
-            デモ機の変更はできません。変更する場合は予約を取り直してください。
+            デモ機の構成（主・子）は変更できません。変更する場合は予約を取り直してください。
           </p>
         </div>
 

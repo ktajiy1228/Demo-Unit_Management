@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { isUnitAvailable, recomputeUnitStatus } from "@/lib/availability";
+import {
+  activeUnitIdsOf,
+  isUnitAvailable,
+  recomputeUnitStatus,
+} from "@/lib/availability";
 
 /**
  * 予約ライフサイクルの結合テスト:
  *   予約作成 → 重複拒否 → 出庫(LOANED) → 返却(AVAILABLE)
- * 実際の SQLite (prisma/dev.db) にテスト用レコードを作成し、最後に削除する。
+ *   + 複数デモ機（主／子）予約・子の個別キャンセル
+ * 実際の DB にテスト用レコードを作成し、最後に削除する。
  */
 describe("予約フロー (DB)", () => {
   const tag = `flow-${Date.now()}`;
@@ -13,6 +18,7 @@ describe("予約フロー (DB)", () => {
   let catId = "";
   let userId = "";
   let unitId = "";
+  let childId = "";
   const resvIds: string[] = [];
 
   const d = (offset: number) => {
@@ -46,15 +52,26 @@ describe("予約フロー (DB)", () => {
         status: "AVAILABLE",
       },
     });
+    const child = await prisma.demoUnit.create({
+      data: {
+        assetNo: `${tag}-C`,
+        name: `${tag} child unit`,
+        modelNumber: "T",
+        categoryId: cat.id,
+        homeLocationId: loc.id,
+        status: "AVAILABLE",
+      },
+    });
     locId = loc.id;
     catId = cat.id;
     userId = user.id;
     unitId = unit.id;
+    childId = child.id;
   });
 
   afterAll(async () => {
     await prisma.reservation.deleteMany({ where: { id: { in: resvIds } } });
-    await prisma.demoUnit.deleteMany({ where: { id: unitId } });
+    await prisma.demoUnit.deleteMany({ where: { id: { in: [unitId, childId] } } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.category.deleteMany({ where: { id: catId } });
     await prisma.location.deleteMany({ where: { id: locId } });
@@ -114,5 +131,74 @@ describe("予約フロー (DB)", () => {
     });
     resvIds.push(r.id);
     expect(await isUnitAvailable(unitId, d(21), d(24))).toBe(true);
+  });
+
+  it("複数デモ機の予約: 主・子ともに押さえられ、子として重複判定される", async () => {
+    const r = await prisma.reservation.create({
+      data: {
+        demoUnitId: unitId,
+        requestedById: userId,
+        customerCompany: "複数社",
+        startDate: d(40),
+        endDate: d(45),
+        pickupLocationId: locId,
+        returnLocationId: locId,
+        status: "CONFIRMED",
+        childUnits: { create: [{ demoUnitId: childId }] },
+      },
+    });
+    resvIds.push(r.id);
+
+    // activeUnitIdsOf は主＋アクティブな子を返す
+    const ids = await activeUnitIdsOf(r.id);
+    expect(ids.sort()).toEqual([unitId, childId].sort());
+
+    // 子デモ機は「子として」重複判定される
+    expect(await isUnitAvailable(childId, d(41), d(44))).toBe(false);
+    expect(await recomputeUnitStatus(childId)).toBe("RESERVED");
+
+    // 出庫すると主・子ともに LOANED
+    await prisma.reservation.update({
+      where: { id: r.id },
+      data: { status: "PICKED_UP", pickedUpAt: new Date(), pickedUpById: userId },
+    });
+    expect(await recomputeUnitStatus(unitId)).toBe("LOANED");
+    expect(await recomputeUnitStatus(childId)).toBe("LOANED");
+
+    // 元に戻す
+    await prisma.reservation.update({
+      where: { id: r.id },
+      data: { status: "CONFIRMED", pickedUpAt: null, pickedUpById: null },
+    });
+  });
+
+  it("子デモ機を個別キャンセルすると、その子は解放され案件は継続", async () => {
+    const r = await prisma.reservation.create({
+      data: {
+        demoUnitId: unitId,
+        requestedById: userId,
+        customerCompany: "子キャンセル社",
+        startDate: d(60),
+        endDate: d(65),
+        pickupLocationId: locId,
+        returnLocationId: locId,
+        status: "CONFIRMED",
+        childUnits: { create: [{ demoUnitId: childId }] },
+      },
+    });
+    resvIds.push(r.id);
+    expect(await isUnitAvailable(childId, d(61), d(64))).toBe(false);
+
+    // 子を CANCELLED に
+    await prisma.reservationUnit.updateMany({
+      where: { reservationId: r.id, demoUnitId: childId },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+
+    // 子は解放、activeUnitIdsOf から外れる、案件は CONFIRMED のまま
+    expect(await isUnitAvailable(childId, d(61), d(64))).toBe(true);
+    expect(await activeUnitIdsOf(r.id)).toEqual([unitId]);
+    const still = await prisma.reservation.findUnique({ where: { id: r.id } });
+    expect(still?.status).toBe("CONFIRMED");
   });
 });

@@ -6,7 +6,8 @@ import { Alert, Card, LinkButton, PageHeader } from "@/components/ui";
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
 import { fmtDate, fmtDateTime, fmtDateW, isOverdue, loanDays } from "@/lib/format";
 import { LifecycleActions } from "./LifecycleActions";
-import { cancelReservation } from "../actions";
+import { cancelReservation, cancelReservationUnit } from "../actions";
+import { RESV_STATUS, RU_STATUS } from "@/lib/constants";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -29,6 +30,11 @@ export default async function ReservationDetailPage({
     where: { id },
     include: {
       demoUnit: { include: { category: true } },
+      childUnits: {
+        where: { status: RU_STATUS.ACTIVE },
+        include: { demoUnit: { include: { category: true } } },
+        orderBy: { createdAt: "asc" },
+      },
       requestedBy: true,
       pickedUpBy: true,
       returnedBy: true,
@@ -39,12 +45,14 @@ export default async function ReservationDetailPage({
   if (!r) notFound();
 
   const overdue = isOverdue(r.endDate, r.status);
-  const canCancel = !["RETURNED", "CANCELLED"].includes(r.status);
+  // 出荷後（貸出中）・返却後・キャンセル後はキャンセル不可。
+  const canCancel = r.status === RESV_STATUS.CONFIRMED;
+  const childCount = r.childUnits.length;
 
   return (
     <>
       <PageHeader
-        title={`予約: ${r.demoUnit.name}`}
+        title={`予約: ${r.demoUnit.name}${childCount > 0 ? ` 他${childCount}件` : ""}`}
         description={r.customerCompany}
         actions={
           <>
@@ -71,12 +79,52 @@ export default async function ReservationDetailPage({
         <Card className="p-4 lg:col-span-2">
           <h2 className="mb-2 text-sm font-semibold text-slate-700">予約内容</h2>
           <dl>
-            <Row label="デモ機">
+            <Row label={childCount > 0 ? "主デモ機" : "デモ機"}>
               <Link href={`/units/${r.demoUnit.id}`} className="underline">
                 {r.demoUnit.name}（{r.demoUnit.assetNo} / {r.demoUnit.modelNumber}）
               </Link>
+              <span className="ml-2 text-xs text-slate-500">
+                {r.demoUnit.category.name}
+              </span>
             </Row>
-            <Row label="カテゴリ">{r.demoUnit.category.name}</Row>
+            {childCount > 0 && (
+              <Row label="子デモ機">
+                <ul className="space-y-1">
+                  {r.childUnits.map((cu) => (
+                    <li
+                      key={cu.id}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <Link
+                        href={`/units/${cu.demoUnit.id}`}
+                        className="underline"
+                      >
+                        {cu.demoUnit.name}（{cu.demoUnit.assetNo} /{" "}
+                        {cu.demoUnit.modelNumber}）
+                      </Link>
+                      <span className="text-xs text-slate-500">
+                        {cu.demoUnit.category.name}
+                      </span>
+                      {canCancel && (
+                        <form action={cancelReservationUnit}>
+                          <input
+                            type="hidden"
+                            name="reservationUnitId"
+                            value={cu.id}
+                          />
+                          <button
+                            type="submit"
+                            className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+                          >
+                            この子機をキャンセル
+                          </button>
+                        </form>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Row>
+            )}
             <Row label="期間">
               <span className="tabular">
                 {fmtDateW(r.startDate)} 〜 {fmtDateW(r.endDate)}

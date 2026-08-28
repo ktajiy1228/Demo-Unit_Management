@@ -10,7 +10,7 @@ import {
   Th,
 } from "@/components/ui";
 import { OverdueBadge, ResvStatusBadge } from "@/components/StatusBadge";
-import { RESV_STATUS_LABEL } from "@/lib/constants";
+import { RESV_STATUS_LABEL, RU_STATUS } from "@/lib/constants";
 import { cn } from "@/lib/cn";
 import { fmtDate, fmtDateW, isOverdue } from "@/lib/format";
 
@@ -50,6 +50,7 @@ export default async function ReservationsPage({
         demoUnit: true,
         requestedBy: true,
         pickupLocation: true,
+        childUnits: { where: { status: RU_STATUS.ACTIVE }, select: { id: true } },
       },
     }),
     prisma.user.findMany({
@@ -166,6 +167,11 @@ export default async function ReservationsPage({
                   <Td>
                     <div className="font-medium text-slate-900">
                       {r.demoUnit.name}
+                      {r.childUnits.length > 0 && (
+                        <span className="ml-1 text-xs font-normal text-slate-500">
+                          他{r.childUnits.length}件
+                        </span>
+                      )}
                     </div>
                     <div className="tabular text-xs text-slate-500">
                       {r.demoUnit.assetNo}

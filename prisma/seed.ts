@@ -125,6 +125,7 @@ function noteOf(name: string): string | null {
 
 async function main() {
   // 既存データを削除（依存関係の逆順）
+  await prisma.reservationUnit.deleteMany();
   await prisma.maintenanceRecord.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.demoUnit.deleteMany();
@@ -386,6 +387,29 @@ async function main() {
     ],
   });
 
+  // 複数デモ機の予約（主 TSG60W-03 ＋ 子 TSG60W-04 / TSG60WS-01。すべて本社配置）。
+  // 子 TSG60WS-01 はキャンセル済みにして「他○件」がアクティブのみで数えられることを確認する。
+  await prisma.reservation.create({
+    data: {
+      demoUnitId: byAsset("TSG60W-03").id,
+      requestedById: staff1.id,
+      customerCompany: "西新宿ショールーム",
+      customerName: "伊藤様",
+      startDate: day(7),
+      plannedShipDate: defaultPlannedShipDate(day(7)),
+      endDate: day(14),
+      pickupLocationId: honsha.id,
+      returnLocationId: honsha.id,
+      status: "CONFIRMED",
+      childUnits: {
+        create: [
+          { demoUnitId: byAsset("TSG60W-04").id },
+          { demoUnitId: byAsset("TSG60WS-01").id, status: "CANCELLED", cancelledAt: day(-1) },
+        ],
+      },
+    },
+  });
+
   // 点検・修理: 「※不点灯」の器具は継続中の修理として登録（＝貸出不可）
   for (const u of units) {
     if (u.name.includes("不点灯")) {
@@ -424,22 +448,25 @@ async function main() {
         OR: [{ endDate: null }, { endDate: { gte: now } }],
       },
     });
+    // 主デモ機 or アクティブな子デモ機として押さえているか。
+    const occupies = {
+      OR: [
+        { demoUnitId: u.id },
+        { childUnits: { some: { demoUnitId: u.id, status: "ACTIVE" } } },
+      ],
+    };
     let status = "AVAILABLE";
     if (maint) {
       status = "MAINTENANCE";
     } else {
       const loaned = await prisma.reservation.findFirst({
-        where: { demoUnitId: u.id, status: "PICKED_UP" },
+        where: { ...occupies, status: "PICKED_UP" },
       });
       if (loaned) {
         status = "LOANED";
       } else {
         const upcoming = await prisma.reservation.findFirst({
-          where: {
-            demoUnitId: u.id,
-            status: "CONFIRMED",
-            endDate: { gte: now },
-          },
+          where: { ...occupies, status: "CONFIRMED", endDate: { gte: now } },
         });
         if (upcoming) status = "RESERVED";
       }

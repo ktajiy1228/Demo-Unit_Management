@@ -62,6 +62,16 @@ export const ACTIVE_RESV_STATUSES: string[] = [
   RESV_STATUS.PICKED_UP,
 ];
 
+// 予約に紐づく子デモ機（ReservationUnit）の状態。
+export const RU_STATUS = {
+  ACTIVE: "ACTIVE",
+  CANCELLED: "CANCELLED",
+} as const;
+export type RuStatus = (typeof RU_STATUS)[keyof typeof RU_STATUS];
+
+// 1案件に含められるデモ機の最大台数（主1＋子2）。
+export const MAX_CHILD_UNITS = 2;
+
 export const MAINT_TYPE_LABEL: Record<string, string> = {
   INSPECTION: "点検",
   REPAIR: "修理",
